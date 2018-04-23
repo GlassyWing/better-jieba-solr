@@ -1,36 +1,40 @@
 package org.manlier.analysis.filters;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Logger;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.core.LowerCaseFilter;
 import org.apache.lucene.analysis.core.WhitespaceTokenizer;
-import org.apache.lucene.analysis.synonym.*;
+import org.apache.lucene.analysis.synonym.SolrSynonymParser;
+import org.apache.lucene.analysis.synonym.SynonymGraphFilter;
+import org.apache.lucene.analysis.synonym.SynonymMap;
+import org.apache.lucene.analysis.synonym.WordnetSynonymParser;
 import org.apache.lucene.analysis.util.ResourceLoader;
 import org.apache.lucene.analysis.util.ResourceLoaderAware;
 import org.apache.lucene.analysis.util.TokenFilterFactory;
 import org.apache.lucene.analysis.util.TokenizerFactory;
 import org.manlier.analysis.engines.HBaseSynonymEngine;
-import org.manlier.common.schemes.HBaseSynonymQuery;
+import org.manlier.analysis.syn.DictStateSynService;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.Reader;
 import java.io.StringReader;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 自定义同义词过滤器工厂
  */
-public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implements ResourceLoaderAware {
+public class SynonymGraphFilterFactory
+        extends TokenFilterFactory
+        implements ResourceLoaderAware {
     private Logger logger = Logger.getLogger(getClass());
     private final String synonyms;          //同义词词典的位置
     private final boolean ignoreCase;       //ignoreCase表示再分词匹配的时候要不要忽略大小写
@@ -47,7 +51,7 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
      *
      * @param args
      */
-    public HBaseSynonymGraphFilterFactory(Map<String, String> args) throws IOException {
+    public SynonymGraphFilterFactory(Map<String, String> args) throws IOException {
         super(args);
         this.synonyms = this.require(args, "synonyms");
         this.ignoreCase = this.getBoolean(args, "ignoreCase", false);
@@ -56,33 +60,28 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
         this.analyzerName = this.get(args, "analyzer");
         this.tokenizerFactory = this.get(args, "tokenizerFactory");
 
-        // HBase 连接设置
-        String ZKQuorum = get(args, "ZKQuorum");
-        String ZKPort = get(args, "ZKPort");
-        String ZKZnode = get(args, "ZKZnode");
 
-        BitSet bits = new BitSet(3);
-        bits.set(0, ZKQuorum != null);
-        bits.set(1, ZKPort != null);
-        bits.set(2, ZKZnode != null);
+        String jdbcUrl = get(args, "jdbcUrl");
+        String tableName = HBaseSynonymEngine.DEFAULT_TB_NAME;
+        String synonymsColumn = HBaseSynonymEngine.DEFAULT_SYNONYMS_COLUMN;
 
-        if (bits.cardinality() == 3) {
-            Configuration config = HBaseConfiguration.create();
-            config.set("hbase.zookeeper.quorum", ZKQuorum);
-            config.set("hbase.zookeeper.property.clientPort", ZKPort);
-            config.set("zookeeper.znode.parent", ZKZnode);
-            engine = new HBaseSynonymEngine(config);
-
-            if (null != get(args, "table")) {
-                HBaseSynonymQuery.TABLE_NAME = get(args, "table");
+        if (jdbcUrl != null) {
+            String inputTBName = get(args, "tableName");
+            String inputSC = get(args, "synonymsColumn");
+            if (inputTBName != null && !inputTBName.trim().equals("")) {
+                tableName = inputTBName;
             }
-
-            if (null != get(args, "CF")) {
-                HBaseSynonymQuery.SYNONYMS_COLUMNFAMILY = Bytes.toBytes(get(args, "CF"));
+            if (inputSC != null && !inputSC.trim().equals("")) {
+                synonymsColumn = inputSC;
             }
+            engine = new HBaseSynonymEngine(jdbcUrl, tableName, synonymsColumn);
+        }
 
-        } else if (bits.cardinality() != 0) {
-            throw new IllegalArgumentException("Params ZKQuorum, ZKPort and ZKZnode must be set together.");
+        String synZKQuorum = get(args, "synZKQuorum");
+        String synZKPath = get(args, "synZKPath");
+
+        if (synZKQuorum != null && synZKPath != null) {
+            DictStateSynService.getInstance().init(synZKQuorum, synZKPath);
         }
 
         if (this.analyzerName != null && this.tokenizerFactory != null) {
@@ -111,9 +110,7 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
         return this.map.fst == null ? input : new SynonymGraphFilter(input, this.map, this.ignoreCase);
     }
 
-
-    @Override
-    public void inform(ResourceLoader loader) throws IOException {
+    public Analyzer getAnalyzer(ResourceLoader loader) throws IOException {
         final TokenizerFactory factory = this.tokenizerFactory == null ? null : this.loadTokenizerFactory(loader, this.tokenizerFactory);
         Analyzer analyzer;
         if (this.analyzerName != null) {
@@ -127,6 +124,13 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
                 }
             };
         }
+        return analyzer;
+    }
+
+
+    @Override
+    public void inform(ResourceLoader loader) throws IOException {
+        Analyzer analyzer = getAnalyzer(loader);
 
         try {
             Throwable var5 = null;
@@ -140,7 +144,10 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
                 } else {
                     formatClass = SolrSynonymParser.class.getName();
                 }
-
+                // 添加同义词同步器
+                DictStateSynService
+                        .getInstance()
+                        .addDictNeedToSyn(new SynonymSynchronizer(map, formatClass, this, loader));
                 this.map = this.loadSynonyms(loader, formatClass, true, analyzer);
             } catch (Throwable var15) {
                 var5 = var15;
@@ -178,7 +185,6 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
      */
     @SuppressWarnings("unchecked")
     protected SynonymMap loadSynonyms(ResourceLoader loader, String cname, boolean dedup, Analyzer analyzer) throws IOException, ParseException {
-
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT);
         Class clazz = loader.findClass(cname, SynonymMap.Parser.class);
 
@@ -201,9 +207,7 @@ public class HBaseSynonymGraphFilterFactory extends TokenFilterFactory implement
             logger.info("Loading synonyms from database");
             engine.scanThesaurus(record -> {
                 try {
-                    String r = String.join(",", record);
-                    Reader reader = new StringReader(r);
-                    parser.parse(reader);
+                    parser.parse(new StringReader(record));
                 } catch (ParseException | IOException e) {
                     logger.error("Format error, skip this record:", e);
                 }
