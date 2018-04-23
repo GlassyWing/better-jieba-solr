@@ -1,12 +1,12 @@
 package org.manlier.analysis.jieba;
 
+import org.apache.log4j.Logger;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.analysis.util.SegmentingTokenizerBase;
 import org.apache.lucene.util.AttributeFactory;
-import org.manlier.analysis.jieba.JiebaSegmenter;
-import org.manlier.analysis.jieba.SegToken;
 import org.manlier.analysis.jieba.dao.DictSource;
+import org.manlier.analysis.syn.DictSyn;
 
 import java.io.IOException;
 import java.text.BreakIterator;
@@ -19,7 +19,7 @@ import static org.manlier.analysis.jieba.JiebaSegmenter.*;
 /**
  * 自定义jieba分词器
  */
-public final class HBaseJiebaTokenizer extends SegmentingTokenizerBase {
+public final class JiebaTokenizer extends SegmentingTokenizerBase {
     private static final BreakIterator sentenceProto;
     private final JiebaSegmenter segmenter;
     private final SegMode segMode;
@@ -28,27 +28,13 @@ public final class HBaseJiebaTokenizer extends SegmentingTokenizerBase {
     private final CharTermAttribute termAttr;
     private final OffsetAttribute offsetAttr;
 
-    public HBaseJiebaTokenizer() throws IOException {
-        this(null, SegMode.SEARCH, true, true, DEFAULT_TOKEN_ATTRIBUTE_FACTORY);
-    }
-
-    public HBaseJiebaTokenizer(List<DictSource> dictSources) throws IOException {
-        this(dictSources, SegMode.SEARCH, true, true, DEFAULT_TOKEN_ATTRIBUTE_FACTORY);
-    }
-
-    public HBaseJiebaTokenizer(List<DictSource> dictSources
-            , SegMode segMode, boolean useDefaultDict, boolean HMM
-            , AttributeFactory factory) throws IOException {
+    public JiebaTokenizer(JiebaSegmenter segmenter
+            , SegMode segMode
+            , boolean HMM
+            , AttributeFactory factory) {
         super(factory, (BreakIterator) sentenceProto.clone());
-        if (!useDefaultDict) {
-            System.setProperty("jieba.defaultDict", "false");
-        }
-        segmenter = new JiebaSegmenter();
-        if (dictSources != null) {
-            for (DictSource dictSource : dictSources) {
-                segmenter.loadUserDict(dictSource);
-            }
-        }
+
+        this.segmenter = segmenter;
         this.segMode = segMode;
         this.HMM = HMM;
         this.termAttr = addAttribute(CharTermAttribute.class);
