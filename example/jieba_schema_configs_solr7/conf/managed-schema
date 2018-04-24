@@ -115,10 +115,11 @@
     <field name="_version_" type="plong" indexed="false" stored="false"/>
     <field name="_root_" type="string" indexed="true" stored="false" docValues="false" />
     <field name="_text_" type="text_general" indexed="true" stored="false" multiValued="true"/>
+    <field name="describe" type="text_cn" indexed="true" stored="false" multiValued="true"/>
 
     <!-- This can be enabled, in case the client does not know what fields may be searched. It isn't enabled by default
          because it's very expensive to index everything twice. -->
-    <!-- <copyField source="*" dest="_text_"/> -->
+    <copyField source="*" dest="_text_"/>
 
     <!-- Dynamic field definitions allow using convention over configuration
        for fields via the specification of patterns to match field names.
@@ -290,44 +291,54 @@
     </fieldType>
 
     <!-- 处理中文 -->
-    <fieldType name="text_jieba" class="solr.TextField" positionIncrementGap="100" multiValued="true">
+    <fieldType name="text_cn" class="solr.TextField" positionIncrementGap="100" multiValued="true">
       <analyzer type="index">
-        <tokenizer class="org.manlier.analysis.jieba.HBaseJiebaTokenizerFactory"
+        <tokenizer class="org.manlier.analysis.jieba.JiebaTokenizerFactory"
           useDefaultDict="false"
           HMM="false"
-          ZKQuorum="node1,node2,node3"
-          ZKPort="2181" 
-          ZKZnode="/hbase-unsecure"/>
+          jdbcUrl="jdbc:phoenix:localhost:2181"
+          synZKQuorum="localhost:2181"
+          synZKPath="/test" />
         <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt"/>
+        <filter class="org.manlier.analysis.filters.SynonymGraphFilterFactory" 
+          synonyms="synonyms.txt"
+          expand="true"
+          jdbcUrl="jdbc:phoenix:localhost:2181"
+          tableName="THESAURUS_GROUP" />
         <filter class="solr.LowerCaseFilterFactory"/>
       </analyzer>
       <analyzer type="query">
-        <tokenizer class="org.manlier.analysis.jieba.HBaseJiebaTokenizerFactory"
-                  useDefaultDict="false"
-                  HMM="false"
-                  ZKQuorum="node1,node2,node3"
-                  ZKPort="2181"
-                  ZKZnode="/hbase-unsecure"/>
-        <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt" />
+        <tokenizer class="org.manlier.analysis.jieba.JiebaTokenizerFactory"
+          useDefaultDict="false"
+          HMM="false"
+          jdbcUrl="jdbc:phoenix:localhost:2181"
+          synZKQuorum="localhost:2181"
+          synZKPath="/test" />
+        <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt"/>
+        <filter class="org.manlier.analysis.filters.SynonymGraphFilterFactory" 
+          synonyms="synonyms.txt"
+          expand="true"
+          jdbcUrl="jdbc:phoenix:localhost:2181"
+          tableName="THESAURUS_GROUP" />
         <filter class="solr.LowerCaseFilterFactory"/>
       </analyzer>
     </fieldType>
 
-    <fieldType name="text_syn" class="solr.TextField">
+    <!-- <fieldType name="text_syn" class="solr.TextField">
       <analyzer type="index">
          <tokenizer class="solr.WhitespaceTokenizerFactory"/>
-        <filter class="org.manlier.analysis.filters.HBaseSynonymGraphFilterFactory" 
+        <filter class="org.manlier.analysis.filters.SynonymGraphFilterFactory" 
           synonyms="synonyms.txt"
-          ZKQuorum="172.18.140.150,172.18.140.151,172.18.0.83"
-          ZKPort="2181" 
-          ZKZnode="/hbase-unsecure" />
+          expand="true"
+          jdbcUrl="jdbc:phoenix:localhost:2181"
+          tableName="THESAURUS_GROUP" />
       </analyzer>
       <analyzer type="query">
          <tokenizer class="solr.WhitespaceTokenizerFactory"/>
         <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt" />
         <filter class="solr.LowerCaseFilterFactory"/>
       </analyzer>
-    </fieldType>
+    </fieldType> -->
 
     <!-- A text field with defaults appropriate for English: it tokenizes with StandardTokenizer,
          removes English stop words (lang/stopwords_en.txt), down cases, protects words from protwords.txt, and
