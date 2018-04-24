@@ -7,14 +7,13 @@ import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.core.LowerCaseFilter;
 import org.apache.lucene.analysis.core.WhitespaceTokenizer;
 import org.apache.lucene.analysis.synonym.SolrSynonymParser;
-import org.apache.lucene.analysis.synonym.SynonymGraphFilter;
 import org.apache.lucene.analysis.synonym.SynonymMap;
 import org.apache.lucene.analysis.synonym.WordnetSynonymParser;
 import org.apache.lucene.analysis.util.ResourceLoader;
 import org.apache.lucene.analysis.util.ResourceLoaderAware;
 import org.apache.lucene.analysis.util.TokenFilterFactory;
 import org.apache.lucene.analysis.util.TokenizerFactory;
-import org.manlier.analysis.engines.HBaseSynonymEngine;
+import org.manlier.analysis.engines.DBSynonymEngine;
 import org.manlier.analysis.syn.DictStateSynService;
 
 import java.io.IOException;
@@ -43,8 +42,32 @@ public class SynonymGraphFilterFactory
     private final boolean expand;
     private final String analyzerName;      //在词典表中读取一个字符串要进行分词，这个指定使用的分词器
     private final Map<String, String> tokArgs = new HashMap<>();
-    private SynonymMap map;
-    private HBaseSynonymEngine engine;
+    SynonymMap map;
+    private SynonymMapGetter mapGetter;
+    private DBSynonymEngine engine;
+    private boolean needSyn = false;
+    private SynonymSynchronizer synchronizer;
+
+    static class SynonymMapGetter {
+
+        private SynonymGraphFilterFactory filterFactory;
+
+        public SynonymMapGetter(SynonymGraphFilterFactory filterFactory) {
+            this.filterFactory = filterFactory;
+        }
+
+        public SynonymMap getSynonymMap() {
+            return filterFactory.getSynonyms();
+        }
+    }
+
+    public synchronized void setSynonyms(SynonymMap synonyms) {
+        this.map = synonyms;
+    }
+
+    public synchronized SynonymMap getSynonyms() {
+        return this.map;
+    }
 
     /**
      * Initialize this factory via a set of key-value pairs.
@@ -60,10 +83,10 @@ public class SynonymGraphFilterFactory
         this.analyzerName = this.get(args, "analyzer");
         this.tokenizerFactory = this.get(args, "tokenizerFactory");
 
-
+        this.mapGetter = new SynonymMapGetter(this);
         String jdbcUrl = get(args, "jdbcUrl");
-        String tableName = HBaseSynonymEngine.DEFAULT_TB_NAME;
-        String synonymsColumn = HBaseSynonymEngine.DEFAULT_SYNONYMS_COLUMN;
+        String tableName = DBSynonymEngine.DEFAULT_TB_NAME;
+        String synonymsColumn = DBSynonymEngine.DEFAULT_SYNONYMS_COLUMN;
 
         if (jdbcUrl != null) {
             String inputTBName = get(args, "tableName");
@@ -74,13 +97,14 @@ public class SynonymGraphFilterFactory
             if (inputSC != null && !inputSC.trim().equals("")) {
                 synonymsColumn = inputSC;
             }
-            engine = new HBaseSynonymEngine(jdbcUrl, tableName, synonymsColumn);
+            engine = new DBSynonymEngine(jdbcUrl, tableName, synonymsColumn);
         }
 
         String synZKQuorum = get(args, "synZKQuorum");
         String synZKPath = get(args, "synZKPath");
 
         if (synZKQuorum != null && synZKPath != null) {
+            needSyn = true;
             DictStateSynService.getInstance().init(synZKQuorum, synZKPath);
         }
 
@@ -107,7 +131,12 @@ public class SynonymGraphFilterFactory
 
     @Override
     public TokenStream create(TokenStream input) {
-        return this.map.fst == null ? input : new SynonymGraphFilter(input, this.map, this.ignoreCase);
+        logger.info("Create new SynonymGraphFilter");
+        if (this.map.fst != null) {
+            return new SynonymGraphFilter(input, mapGetter, this.ignoreCase);
+        } else {
+            return input;
+        }
     }
 
     public Analyzer getAnalyzer(ResourceLoader loader) throws IOException {
@@ -144,11 +173,14 @@ public class SynonymGraphFilterFactory
                 } else {
                     formatClass = SolrSynonymParser.class.getName();
                 }
-                // 添加同义词同步器
-                DictStateSynService
-                        .getInstance()
-                        .addDictNeedToSyn(new SynonymSynchronizer(map, formatClass, this, loader));
                 this.map = this.loadSynonyms(loader, formatClass, true, analyzer);
+                if (needSyn) {
+                    synchronizer = new SynonymSynchronizer(formatClass, this, loader);
+                    // 添加同义词同步器
+                    DictStateSynService
+                            .getInstance()
+                            .addDictNeedToSyn(synchronizer);
+                }
             } catch (Throwable var15) {
                 var5 = var15;
                 throw var15;

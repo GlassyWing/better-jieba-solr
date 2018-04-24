@@ -1,12 +1,10 @@
 package org.manlier.analysis.engines;
 
-import org.apache.log4j.Logger;
-
 import java.io.IOException;
 import java.sql.*;
 import java.util.function.Consumer;
 
-public class HBaseSynonymEngine implements SynonymEngine {
+public class DBSynonymEngine implements SynonymEngine {
 
     public final static String DEFAULT_TB_NAME = "thesaurus";
     public final static String DEFAULT_SYNONYMS_COLUMN = "SYNONYMS";
@@ -14,15 +12,15 @@ public class HBaseSynonymEngine implements SynonymEngine {
     private String jdbcUrl;
     private String scanSQL;
 
-    public HBaseSynonymEngine(String jdbcUrl) {
+    public DBSynonymEngine(String jdbcUrl) {
         this(jdbcUrl, DEFAULT_TB_NAME, DEFAULT_SYNONYMS_COLUMN);
     }
 
-    public HBaseSynonymEngine(String jdbcUrl, String tableName) {
+    public DBSynonymEngine(String jdbcUrl, String tableName) {
         this(jdbcUrl, tableName, DEFAULT_SYNONYMS_COLUMN);
     }
 
-    public HBaseSynonymEngine(String jdbcUrl, String tableName, String synonymsColumn) {
+    public DBSynonymEngine(String jdbcUrl, String tableName, String synonymsColumn) {
         this.jdbcUrl = jdbcUrl;
         scanSQL = "SELECT " + synonymsColumn + " FROM " + tableName;
     }
@@ -41,7 +39,7 @@ public class HBaseSynonymEngine implements SynonymEngine {
     }
 
     public static void main(String[] args) throws IOException {
-        new HBaseSynonymEngine("jdbc:phoenix", "THESAURUS_GROUP")
+        new DBSynonymEngine("jdbc:phoenix", "THESAURUS_GROUP")
                 .scanThesaurus(System.out::println);
     }
 }

@@ -1,6 +1,5 @@
 package org.manlier.analysis.syn;
 
-import org.apache.commons.collections.list.SynchronizedList;
 import org.apache.zookeeper.KeeperException;
 import org.manlier.common.zkeepr.SynSignerReceiver;
 import org.manlier.common.zkeepr.SynSignerSender;
@@ -26,6 +25,7 @@ public class DictStateSynService implements Consumer<String> {
 
     public void addDictNeedToSyn(DictSyn dictSyn) {
         logger.info(dictSyn.getClass().getName());
+        if (!initialized) return;
         this.synList.add(dictSyn);
     }
 

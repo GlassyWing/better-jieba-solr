@@ -1,6 +1,7 @@
 package org.manlier.analysis.jieba;
 
 import org.apache.log4j.Logger;
+import org.apache.lucene.analysis.synonym.SynonymGraphFilter;
 import org.manlier.analysis.jieba.dao.DictSource;
 import org.manlier.analysis.syn.DictSyn;
 
