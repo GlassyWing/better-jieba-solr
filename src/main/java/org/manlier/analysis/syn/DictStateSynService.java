@@ -24,12 +24,12 @@ public class DictStateSynService implements Consumer<String> {
     public void addDictNeedToSyn(DictSyn dictSyn) {
         logger.info(dictSyn.getClass().getName());
         if (!initialized) return;
-        this.synList.put(dictSyn.getClass().getName(), dictSyn);
+        this.synList.add(dictSyn);
     }
 
     private SynSignerSender sender;
 
-    private Map<String, DictSyn> synList = new HashMap<>();
+    private List<DictSyn> synList = new LinkedList<>();
 
     private boolean initialized = false;
 
@@ -59,14 +59,13 @@ public class DictStateSynService implements Consumer<String> {
     public void runSyncJob() {
         logger.info("Try to synchronize dictionaries");
         logger.info("Syn list size: " + synList.size());
-        for (DictSyn dictSyn : synList.values()) {
-            logger.info("Syn Type: " + dictSyn.getClass().getName());
+        synList.parallelStream().forEach(dictSyn -> {
             try {
                 dictSyn.synDict();
             } catch (IOException e) {
                 logger.error("", e);
             }
-        }
+        });
         logger.info("Synchronize dictionaries done!");
         sendSyncDoneSignal();
     }
