@@ -7,9 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -26,12 +24,12 @@ public class DictStateSynService implements Consumer<String> {
     public void addDictNeedToSyn(DictSyn dictSyn) {
         logger.info(dictSyn.getClass().getName());
         if (!initialized) return;
-        this.synList.add(dictSyn);
+        this.synList.put(dictSyn.getClass().getName(), dictSyn);
     }
 
     private SynSignerSender sender;
 
-    private List<DictSyn> synList = Collections.synchronizedList(new LinkedList<>());
+    private Map<String, DictSyn> synList = new HashMap<>();
 
     private boolean initialized = false;
 
@@ -60,8 +58,9 @@ public class DictStateSynService implements Consumer<String> {
 
     public void runSyncJob() {
         logger.info("Try to synchronize dictionaries");
-        for (DictSyn dictSyn : synList) {
-            logger.info("Syn list size: " + synList.size());
+        logger.info("Syn list size: " + synList.size());
+        for (DictSyn dictSyn : synList.values()) {
+            logger.info("Syn Type: " + dictSyn.getClass().getName());
             try {
                 dictSyn.synDict();
             } catch (IOException e) {
